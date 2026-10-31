@@ -69,6 +69,19 @@ export function iniciarJuego(canvas: HTMLCanvasElement) {
   const BARRA_APAGADA: [number, number, number, number] = [0.0, 0.3, 0.0, 1.0];   // verde oscuro
   const BARRA_ENCENDIDA: [number, number, number, number] = [0.4, 1.0, 0.4, 1.0]; // verde claro
 
+  // Objetivos: cada uno a una profundidad y altura distintas (la torreta está en z = 8).
+  // Ángulos de tiro rasante con los que se acierta cada uno (simulados con la misma física;
+  // también hay una ventana de tiro alto, de unos 5°, cerca de los 70°-85°):
+  //   cercano: nivel 1 (8°-29°), nivel 2 (5°-25°), nivel 3 (5°-23°)
+  //   medio:   nivel 2 (22°-34°), nivel 3 (16°-26°)
+  //   lejano:  nivel 3 (28°-36°)
+  // Así cada nivel de fuerza acierta al menos uno, y el lejano exige la fuerza máxima.
+  const objetivos: { pos: [number, number, number]; vivo: boolean }[] = [
+    { pos: [-7, 3, -2], vivo: true },  // cercano: a 10 de distancia
+    { pos: [6, 5, -12], vivo: true },  // medio: a 20
+    { pos: [0, 7, -24], vivo: true },  // lejano: a 32
+  ];
+
   // --- FÍSICA DEL PROYECTIL ---
   const GRAVEDAD = 9.8;                 // unidades/s², hacia -Y
   const FUERZAS = [0, 12, 16, 20];      // rapidez inicial por nivel (índice 1, 2, 3)
@@ -115,21 +128,25 @@ export function iniciarJuego(canvas: HTMLCanvasElement) {
       bala.t += PASO_FISICA;
       posicionBala(bala.t, bala.pos);
 
+      // Choque con un objetivo (esfera contra esfera): se compara la distancia al cuadrado
+      // con la suma de los radios al cuadrado, así no hace falta calcular la raíz
+      for (const obj of objetivos) {
+        if (!obj.vivo) continue;
+        const distancia2 = vec3.squaredDistance(bala.pos, obj.pos);
+        const sumaRadios = RADIO_BALA + RADIO_OBJETIVO;
+        if (distancia2 <= sumaRadios * sumaRadios) {
+          obj.vivo = false;      // el objetivo alcanzado desaparece
+          balaDisponible = true; // y la bala vuelve a la punta
+          break;
+        }
+      }
+
       // Choque con el suelo (y = 0): la bala vuelve a la punta del cañón
-      if (bala.pos[1] - RADIO_BALA <= 0) {
+      if (!balaDisponible && bala.pos[1] - RADIO_BALA <= 0) {
         balaDisponible = true;
       }
-      // FASE 5: aquí va el choque con los objetivos
     }
   }
-
-  // Objetivos: cada uno a una profundidad y altura distintas.
-  // La torreta está en z = 8; el comentario dice cuánto más adelante está cada uno.
-  const objetivos: { pos: [number, number, number]; vivo: boolean }[] = [
-    { pos: [-7, 3, -2], vivo: true },  // a 10 de distancia: fuerza 1
-    { pos: [6, 5, -12], vivo: true },  // a 20: fuerza 2
-    { pos: [0, 7, -24], vivo: true },  // a 32: fuerza 3
-  ];
 
   iniciarControles();
 
