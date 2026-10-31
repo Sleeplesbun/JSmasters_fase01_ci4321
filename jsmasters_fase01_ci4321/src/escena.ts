@@ -23,8 +23,9 @@ function createVAO(gl: WebGL2RenderingContext, vertices: Float32Array, indices: 
 }
 
 export function iniciarJuego(canvas: HTMLCanvasElement) {
-  const gl = canvas.getContext('webgl2');
-  if (!gl) throw new Error('WebGL2 no está disponible.');
+  const ctx = canvas.getContext('webgl2');
+  if (!ctx) throw new Error('WebGL2 no está disponible.');
+    const gl: WebGL2RenderingContext = ctx;
 
   const ff = createFixedFunction(gl, { debug: true });
   ff.disable(LIGHTING);
@@ -83,17 +84,30 @@ export function iniciarJuego(canvas: HTMLCanvasElement) {
         ff.drawElements(gl.TRIANGLES, cajaGeom.indices.length, gl.UNSIGNED_SHORT, 0);
       popMatrix();
 
+      // Soportes laterales: fijos al cuerpo, la cabeza gira entre ellos
+      for (const lado of [-1, 1]) {
+        pushMatrix();
+          mat4.translate(modelMatrix, modelMatrix, [lado * 0.7, 0.65, 0]);
+          mat4.scale(modelMatrix, modelMatrix, [0.15, 0.8, 0.8]);
+          ff.setModelMatrix(modelMatrix);
+          ff.setColor([0.25, 0.25, 0.25, 1.0]);
+          gl.bindVertexArray(vaoCaja);
+          ff.drawElements(gl.TRIANGLES, cajaGeom.indices.length, gl.UNSIGNED_SHORT, 0);
+        popMatrix();
+      }
+
       dibujarCabezaTorreta();
     popMatrix();
   }
 
-  // 2. LA TORRETA (CABEZA)
+   // 2. LA TORRETA (CABEZA): gira junto con el cañón
   function dibujarCabezaTorreta() {
     pushMatrix();
-      mat4.translate(modelMatrix, modelMatrix, [0, 0.65, 0]);
+      mat4.translate(modelMatrix, modelMatrix, [0, 0.9, 0]);   // antes 0.65: pivote más arriba
+      mat4.rotateX(modelMatrix, modelMatrix, canonAngle * (Math.PI / 180)); // elevación
 
       pushMatrix();
-        mat4.scale(modelMatrix, modelMatrix, [1.2, 0.8, 1.5]);
+        mat4.scale(modelMatrix, modelMatrix, [1.2, 0.8, 0.9]); // antes 1.5 de fondo
         ff.setModelMatrix(modelMatrix);
         ff.setColor([0.35, 0.35, 0.35, 1.0]);
         gl.bindVertexArray(vaoCaja);
@@ -104,48 +118,52 @@ export function iniciarJuego(canvas: HTMLCanvasElement) {
     popMatrix();
   }
 
-  // 3. EL CAÑÓN
+  // 3. EL CAÑÓN: hijo de la cabeza, hereda su rotación
   function dibujarCanon() {
     pushMatrix();
-      // 1. Movemos el pivote a la cara frontal (hacia el fondo del mundo, o sea -Z)
-      mat4.translate(modelMatrix, modelMatrix, [0, 0, -0.75]);
-      
-      // 2. Aplicamos la rotación (positivo hacia arriba)
-      mat4.rotateX(modelMatrix, modelMatrix, canonAngle * (Math.PI / 180));
-      
-      // 3. Movemos el tubo hacia el fondo para que gire desde su base, no desde su centro
-      mat4.translate(modelMatrix, modelMatrix, [0, 0, -1.5]); 
+       mat4.translate(modelMatrix, modelMatrix, [0, 0, -0.45]); // antes -0.75
+      mat4.translate(modelMatrix, modelMatrix, [0, 0, -1.5]);  // el tubo nace desde su base
 
       pushMatrix();
         mat4.scale(modelMatrix, modelMatrix, [0.4, 0.4, 3.0]);
         ff.setModelMatrix(modelMatrix);
-        ff.setColor([0.15, 0.15, 0.15, 1.0]); 
+        ff.setColor([0.15, 0.15, 0.15, 1.0]);
         gl.bindVertexArray(vaoCaja);
         ff.drawElements(gl.TRIANGLES, cajaGeom.indices.length, gl.UNSIGNED_SHORT, 0);
       popMatrix();
     popMatrix();
   }
+
   // --- EL CICLO DE JUEGO ---
-  function loop() {
-    gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
-    canvas.width = canvas.clientWidth;
-    canvas.height = canvas.clientHeight;
+let ultimo = performance.now(); // momento del cuadro anterior
+
+  function loop(ahora: number) {
+    // dt = segundos que pasaron desde el cuadro anterior
+    const dt = Math.min((ahora - ultimo) / 1000, 0.1);
+    ultimo = ahora;
+
+    // Solo cambia el tamaño del canvas si la ventana cambió
+    if (canvas.width !== canvas.clientWidth || canvas.height !== canvas.clientHeight) {
+      canvas.width = canvas.clientWidth;
+      canvas.height = canvas.clientHeight;
+    }
     gl.viewport(0, 0, canvas.width, canvas.height);
+    gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
 
-    // --- LÓGICA DE MOVIMIENTO (Punto Extra: Movimiento Suave) ---
-    const velocidadMovimiento = 0.3; // Qué tan rápido se mueve a los lados
-    const velocidadRotacion = 1.5;   // Qué tan rápido sube/baja el cañón
+    // --- LÓGICA DE MOVIMIENTO (independiente de los FPS) ---
+    const velocidadMovimiento = 18; // unidades por segundo
+    const velocidadRotacion = 90;   // grados por segundo
 
-    if (teclado.Izquierda) torretaX -= velocidadMovimiento;
-    if (teclado.Derecha) torretaX += velocidadMovimiento;
+    if (teclado.Izquierda) torretaX -= velocidadMovimiento * dt;
+    if (teclado.Derecha) torretaX += velocidadMovimiento * dt;
 
-    // Límite de pantalla para la torreta (Rúbrica: "No debe salirse del área visible")
-    torretaX = Math.max(-18, Math.min(18, torretaX)); 
+    // Límites del recorrido horizontal
+    torretaX = Math.max(-18, Math.min(18, torretaX));
 
-    if (teclado.Arriba) canonAngle += velocidadRotacion;
-    if (teclado.Abajo) canonAngle -= velocidadRotacion;
+    if (teclado.Arriba) canonAngle += velocidadRotacion * dt;
+    if (teclado.Abajo) canonAngle -= velocidadRotacion * dt;
 
-    // Límite del cañón (Rúbrica: "Entre 5 grados y 90 grados")
+    // Límite del cañón: entre 5° y 90°, inclusive
     canonAngle = Math.max(5, Math.min(90, canonAngle));
 
     // --- CÁMARA ---
@@ -159,12 +177,12 @@ export function iniciarJuego(canvas: HTMLCanvasElement) {
     ff.setViewMatrix(view);
 
     // --- DIBUJO ---
-    mat4.identity(modelMatrix); 
+    mat4.identity(modelMatrix);
     dibujarSuelo();
-    dibujarCuerpoTorreta(); 
+    dibujarCuerpoTorreta();
 
     requestAnimationFrame(loop);
   }
 
-  loop();
+  requestAnimationFrame(loop);
 }
