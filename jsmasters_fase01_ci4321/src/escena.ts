@@ -1,8 +1,8 @@
-
+// src/escena.ts
 import { mat4 } from 'gl-matrix';
 import { ATTRIB, createFixedFunction, LIGHTING } from './vendor/ff/ff';
-import { buildPlane, buildBox } from './geometria';
-import { teclado, iniciarControles } from './controles'; // <-- Importamos los controles
+import { buildPlane, buildBox, buildSphere } from './geometria'; 
+import { teclado, iniciarControles } from './controles';
 
 function createVAO(gl: WebGL2RenderingContext, vertices: Float32Array, indices: Uint16Array) {
   const vao = gl.createVertexArray()!;
@@ -33,11 +33,14 @@ export function iniciarJuego(canvas: HTMLCanvasElement) {
   gl.clearColor(0.53, 0.81, 0.92, 1.0); // Azul cielo
 
   // --- PREPARAR GEOMETRÍA EN LA GPU ---
-  const planoGeom = buildPlane(40, 40);
+  const planoGeom = buildPlane(400, 400); 
   const vaoSuelo = createVAO(gl, planoGeom.vertices, planoGeom.indices);
 
   const cajaGeom = buildBox(1, 1, 1);
   const vaoCaja = createVAO(gl, cajaGeom.vertices, cajaGeom.indices);
+
+  const esferaGeom = buildSphere(1.5, 20, 20);
+  const vaoEsfera = createVAO(gl, esferaGeom.vertices, esferaGeom.indices);
 
   // --- SISTEMA DE JERARQUÍAS (MATRIX STACK) ---
   let modelMatrix = mat4.create();
@@ -54,10 +57,17 @@ export function iniciarJuego(canvas: HTMLCanvasElement) {
   }
 
   // --- VARIABLES DE ESTADO ---
-  let torretaX = 0;    // Ahora es 'let' para poder moverla
-  let canonAngle = 30; // Ahora es 'let' para cambiar la inclinación
+  let torretaX = 0;
+  let canonAngle = 30;
 
-  // Arrancamos el detector de teclado
+  // Objetivos: cada uno a una profundidad y altura distintas.
+  // La torreta está en z = 8; el comentario dice cuánto más adelante está cada uno.
+  const objetivos: { pos: [number, number, number]; vivo: boolean }[] = [
+    { pos: [-7, 3, -2], vivo: true },  // a 10 de distancia: fuerza 1
+    { pos: [6, 5, -12], vivo: true },  // a 20: fuerza 2
+    { pos: [0, 7, -24], vivo: true },  // a 32: fuerza 3
+  ];
+
   iniciarControles();
 
   // --- FUNCIONES DE DIBUJO MODULARES ---
@@ -65,16 +75,28 @@ export function iniciarJuego(canvas: HTMLCanvasElement) {
   function dibujarSuelo() {
     pushMatrix();
       ff.setModelMatrix(modelMatrix);
-      ff.setColor([0.55, 0.27, 0.07, 1.0]); 
+      ff.setColor([0.55, 0.27, 0.07, 1.0]);
       gl.bindVertexArray(vaoSuelo);
       ff.drawElements(gl.TRIANGLES, planoGeom.indices.length, gl.UNSIGNED_SHORT, 0);
     popMatrix();
   }
 
-  // 1. EL CUERPO
+  function dibujarObjetivos() {
+    for (const obj of objetivos) {
+      if (!obj.vivo) continue; // un objetivo alcanzado no se dibuja
+      pushMatrix();
+        mat4.translate(modelMatrix, modelMatrix, obj.pos);
+        ff.setModelMatrix(modelMatrix);
+        ff.setColor([0.9, 0.3, 0.1, 1.0]); // anaranjado rojizo
+        gl.bindVertexArray(vaoEsfera);
+        ff.drawElements(gl.TRIANGLES, esferaGeom.indices.length, gl.UNSIGNED_SHORT, 0);
+      popMatrix();
+    }
+  }
+
   function dibujarCuerpoTorreta() {
     pushMatrix();
-      mat4.translate(modelMatrix, modelMatrix, [torretaX, 0.25, 0]);
+      mat4.translate(modelMatrix, modelMatrix, [torretaX, 0.25, 8]);
       
       pushMatrix();
         mat4.scale(modelMatrix, modelMatrix, [2.5, 0.5, 2.5]);
@@ -100,7 +122,7 @@ export function iniciarJuego(canvas: HTMLCanvasElement) {
     popMatrix();
   }
 
-   // 2. LA TORRETA (CABEZA): gira junto con el cañón
+  // 2. LA TORRETA (CABEZA): gira junto con el cañón
   function dibujarCabezaTorreta() {
     pushMatrix();
       mat4.translate(modelMatrix, modelMatrix, [0, 0.9, 0]);   // antes 0.65: pivote más arriba
@@ -121,9 +143,10 @@ export function iniciarJuego(canvas: HTMLCanvasElement) {
   // 3. EL CAÑÓN: hijo de la cabeza, hereda su rotación
   function dibujarCanon() {
     pushMatrix();
-       mat4.translate(modelMatrix, modelMatrix, [0, 0, -0.45]); // antes -0.75
+      mat4.translate(modelMatrix, modelMatrix, [0, 0, -0.45]); // cara frontal de la cabeza
       mat4.translate(modelMatrix, modelMatrix, [0, 0, -1.5]);  // el tubo nace desde su base
 
+      // Tubo principal del cañón
       pushMatrix();
         mat4.scale(modelMatrix, modelMatrix, [0.4, 0.4, 3.0]);
         ff.setModelMatrix(modelMatrix);
@@ -131,6 +154,25 @@ export function iniciarJuego(canvas: HTMLCanvasElement) {
         gl.bindVertexArray(vaoCaja);
         ff.drawElements(gl.TRIANGLES, cajaGeom.indices.length, gl.UNSIGNED_SHORT, 0);
       popMatrix();
+
+      // Indicadores de fuerza (3 barras verdes)
+      const coloresFuerza: [number, number, number, number][] = [
+        [0.0, 0.9, 0.0, 1.0], // Verde brillante
+        [0.0, 0.5, 0.0, 1.0], // Verde medio
+        [0.0, 0.3, 0.0, 1.0]  // Verde oscuro
+      ];
+
+      for (let i = 0; i < 3; i++) {
+        pushMatrix();
+          mat4.translate(modelMatrix, modelMatrix, [0, 0.25, -0.2 - (i * 0.6)]);
+          mat4.scale(modelMatrix, modelMatrix, [0.1, 0.1, 0.4]); 
+          ff.setModelMatrix(modelMatrix);
+          ff.setColor(coloresFuerza[i]);
+          gl.bindVertexArray(vaoCaja);
+          ff.drawElements(gl.TRIANGLES, cajaGeom.indices.length, gl.UNSIGNED_SHORT, 0);
+        popMatrix();
+      }
+
     popMatrix();
   }
 
@@ -158,7 +200,7 @@ let ultimo = performance.now(); // momento del cuadro anterior
     if (teclado.Derecha) torretaX += velocidadMovimiento * dt;
 
     // Límites del recorrido horizontal
-    torretaX = Math.max(-18, Math.min(18, torretaX));
+    torretaX = Math.max(-10, Math.min(10, torretaX));
 
     if (teclado.Arriba) canonAngle += velocidadRotacion * dt;
     if (teclado.Abajo) canonAngle -= velocidadRotacion * dt;
@@ -169,16 +211,20 @@ let ultimo = performance.now(); // momento del cuadro anterior
     // --- CÁMARA ---
     const aspect = canvas.width / canvas.height;
     const proj = mat4.create();
-    mat4.perspective(proj, Math.PI / 4, aspect, 0.1, 1000.0);
+    // Garantiza al menos 70° horizontales y 45° verticales con cualquier tamaño de ventana
+    const fovHorizontal = 70 * (Math.PI / 180);
+    const fovVertical = Math.max(Math.PI / 4, 2 * Math.atan(Math.tan(fovHorizontal / 2) / aspect));
+    mat4.perspective(proj, fovVertical, aspect, 0.1, 1000.0);
     ff.setProjectionMatrix(proj);
 
     const view = mat4.create();
-    mat4.lookAt(view, [0, 4, 22], [0, 6, -10], [0, 1, 0]);
+    mat4.lookAt(view, [0, 13, 30], [0, 2, -8], [0, 1, 0]);
     ff.setViewMatrix(view);
 
     // --- DIBUJO ---
     mat4.identity(modelMatrix);
     dibujarSuelo();
+    dibujarObjetivos();
     dibujarCuerpoTorreta();
 
     requestAnimationFrame(loop);
