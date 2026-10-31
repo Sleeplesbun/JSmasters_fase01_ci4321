@@ -155,7 +155,7 @@ export function iniciarJuego(canvas: HTMLCanvasElement) {
     ff.setProjectionMatrix(proj);
 
     const view = mat4.create();
-    mat4.lookAt(view, [0, 10, 20], [0, 0, 0], [0, 1, 0]);
+    mat4.lookAt(view, [0, 4, 22], [0, 6, -10], [0, 1, 0]);
     ff.setViewMatrix(view);
 
     // --- DIBUJO ---
