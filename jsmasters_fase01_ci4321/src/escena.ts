@@ -1,5 +1,5 @@
 // src/escena.ts
-import { mat4 } from 'gl-matrix';
+import { mat4, vec3 } from 'gl-matrix';
 import { ATTRIB, createFixedFunction, LIGHTING } from './vendor/ff/ff';
 import { buildPlane, buildBox, buildSphere } from './geometria';
 import { teclado, iniciarControles, sePresiono, finDeCuadro } from './controles';
@@ -65,6 +65,64 @@ export function iniciarJuego(canvas: HTMLCanvasElement) {
   const RADIO_BALA = 0.3;
   const RADIO_OBJETIVO = 1.5;
 
+  // Colores de las barras de fuerza (los usan los dos indicadores)
+  const BARRA_APAGADA: [number, number, number, number] = [0.0, 0.3, 0.0, 1.0];   // verde oscuro
+  const BARRA_ENCENDIDA: [number, number, number, number] = [0.4, 1.0, 0.4, 1.0]; // verde claro
+
+  // --- FÍSICA DEL PROYECTIL ---
+  const GRAVEDAD = 9.8;                 // unidades/s², hacia -Y
+  const FUERZAS = [0, 12, 16, 20];      // rapidez inicial por nivel (índice 1, 2, 3)
+  const PASO_FISICA = 1 / 120;          // la física avanza en pasos fijos: mismo vuelo a 30 o a 144 FPS
+  let acumulador = 0;                   // tiempo real pendiente de simular
+
+  const bala = {
+    p0: vec3.create(),  // posición al disparar
+    v0: vec3.create(),  // velocidad al disparar
+    t: 0,               // segundos de vuelo simulados
+    pos: vec3.create(), // posición actual
+  };
+
+  // Matriz de mundo de la bala en reposo; se guarda al dibujarla y se usa al disparar
+  const matrizBalaReposo = mat4.create();
+
+  // Tiro parabólico: p(t) = p0 + v0·t + ½·g·t², con la gravedad solo en Y
+  function posicionBala(t: number, out: vec3) {
+    out[0] = bala.p0[0] + bala.v0[0] * t;
+    out[1] = bala.p0[1] + bala.v0[1] * t - 0.5 * GRAVEDAD * t * t;
+    out[2] = bala.p0[2] + bala.v0[2] * t;
+  }
+
+  function disparar() {
+    // Posición: la traslación de la matriz de la punta, en coordenadas de mundo
+    mat4.getTranslation(bala.p0, matrizBalaReposo);
+
+    // Dirección: el tubo apunta hacia -Z local; en la matriz, el eje Z local es la columna 2
+    const direccion = vec3.fromValues(-matrizBalaReposo[8], -matrizBalaReposo[9], -matrizBalaReposo[10]);
+    vec3.normalize(direccion, direccion);
+    vec3.scale(bala.v0, direccion, FUERZAS[nivelFuerza]);
+
+    bala.t = 0;
+    vec3.copy(bala.pos, bala.p0);
+    acumulador = 0;
+    balaDisponible = false;
+  }
+
+  function actualizarBala(dt: number) {
+    if (balaDisponible) return;
+    acumulador += dt;
+    while (acumulador >= PASO_FISICA && !balaDisponible) {
+      acumulador -= PASO_FISICA;
+      bala.t += PASO_FISICA;
+      posicionBala(bala.t, bala.pos);
+
+      // Choque con el suelo (y = 0): la bala vuelve a la punta del cañón
+      if (bala.pos[1] - RADIO_BALA <= 0) {
+        balaDisponible = true;
+      }
+      // FASE 5: aquí va el choque con los objetivos
+    }
+  }
+
   // Objetivos: cada uno a una profundidad y altura distintas.
   // La torreta está en z = 8; el comentario dice cuánto más adelante está cada uno.
   const objetivos: { pos: [number, number, number]; vivo: boolean }[] = [
@@ -100,6 +158,19 @@ export function iniciarJuego(canvas: HTMLCanvasElement) {
     }
   }
 
+  // Bala en vuelo: se dibuja en coordenadas de mundo, ya no es hija del cañón
+  function dibujarBalaEnVuelo() {
+    if (balaDisponible) return;
+    pushMatrix();
+      mat4.translate(modelMatrix, modelMatrix, bala.pos);
+      mat4.scale(modelMatrix, modelMatrix, [RADIO_BALA, RADIO_BALA, RADIO_BALA]);
+      ff.setModelMatrix(modelMatrix);
+      ff.setColor([0.0, 0.0, 0.0, 1.0]);
+      gl.bindVertexArray(vaoEsfera);
+      ff.drawElements(gl.TRIANGLES, esferaGeom.indices.length, gl.UNSIGNED_SHORT, 0);
+    popMatrix();
+  }
+
   // 1. EL CUERPO: solo se traslada en X
   function dibujarCuerpoTorreta() {
     pushMatrix();
@@ -125,8 +196,29 @@ export function iniciarJuego(canvas: HTMLCanvasElement) {
         popMatrix();
       }
 
+      dibujarIndicadorFuerza();
       dibujarCabezaTorreta();
     popMatrix();
+  }
+
+  // INDICADOR DE FUERZA: 3 barras apiladas en la parte trasera del cuerpo, mirando a la cámara
+  function dibujarIndicadorFuerza() {
+    const ANCHO = 0.4, ALTO = 0.12, FONDO = 0.05, SEPARACION = 0.08;
+
+    for (let i = 0; i < 3; i++) {
+      // i = 0 es la barra de abajo: siempre encendida porque nivelFuerza >= 1
+      const encendida = i < nivelFuerza;
+      const y = 0.25 + ALTO / 2 + i * (ALTO + SEPARACION); // 0.25 = cara de arriba del cuerpo
+      pushMatrix();
+        // Esquina trasera derecha del cuerpo: fuera de los soportes (x = ±0.775), así la cabeza no la tapa
+        mat4.translate(modelMatrix, modelMatrix, [0.95, y, 1.2]);
+        mat4.scale(modelMatrix, modelMatrix, [ANCHO, ALTO, FONDO]);
+        ff.setModelMatrix(modelMatrix);
+        ff.setColor(encendida ? BARRA_ENCENDIDA : BARRA_APAGADA);
+        gl.bindVertexArray(vaoCaja);
+        ff.drawElements(gl.TRIANGLES, cajaGeom.indices.length, gl.UNSIGNED_SHORT, 0);
+      popMatrix();
+    }
   }
 
   // 2. LA TORRETA (CABEZA): gira junto con el cañón alrededor del pivote
@@ -162,33 +254,31 @@ export function iniciarJuego(canvas: HTMLCanvasElement) {
         ff.drawElements(gl.TRIANGLES, cajaGeom.indices.length, gl.UNSIGNED_SHORT, 0);
       popMatrix();
 
+      // Indicador decorativo sobre el tubo: repite el nivel de fuerza y gira con el cañón.
+      // El indicador oficial del enunciado es el del cuerpo (dibujarIndicadorFuerza).
+      for (let i = 0; i < 3; i++) {
+        const encendida = i < nivelFuerza;
+        pushMatrix();
+          // i = 0 queda más cerca de la base del tubo; i = 2, más cerca de la punta
+          mat4.translate(modelMatrix, modelMatrix, [0, 0.25, 0.6 - i * 0.6]);
+          mat4.scale(modelMatrix, modelMatrix, [0.1, 0.1, 0.4]);
+          ff.setModelMatrix(modelMatrix);
+          ff.setColor(encendida ? BARRA_ENCENDIDA : BARRA_APAGADA);
+          gl.bindVertexArray(vaoCaja);
+          ff.drawElements(gl.TRIANGLES, cajaGeom.indices.length, gl.UNSIGNED_SHORT, 0);
+        popMatrix();
+      }
+
       // Bala en reposo: hija del cañón, lo acompaña al moverse y al girar
       if (balaDisponible) {
         pushMatrix();
           mat4.translate(modelMatrix, modelMatrix, [0, 0, -1.5 - RADIO_BALA]); // punta del tubo
+          mat4.copy(matrizBalaReposo, modelMatrix); // se guarda para saber desde dónde disparar
           mat4.scale(modelMatrix, modelMatrix, [RADIO_BALA, RADIO_BALA, RADIO_BALA]);
           ff.setModelMatrix(modelMatrix);
           ff.setColor([0.0, 0.0, 0.0, 1.0]); // negra
           gl.bindVertexArray(vaoEsfera);
           ff.drawElements(gl.TRIANGLES, esferaGeom.indices.length, gl.UNSIGNED_SHORT, 0);
-        popMatrix();
-      }
-
-      // Indicadores de fuerza (3 barras verdes) — PROVISIONAL: se rehacen en la fase 3
-      const coloresFuerza: [number, number, number, number][] = [
-        [0.0, 0.9, 0.0, 1.0], // Verde brillante
-        [0.0, 0.5, 0.0, 1.0], // Verde medio
-        [0.0, 0.3, 0.0, 1.0]  // Verde oscuro
-      ];
-
-      for (let i = 0; i < 3; i++) {
-        pushMatrix();
-          mat4.translate(modelMatrix, modelMatrix, [0, 0.25, -0.2 - (i * 0.6)]);
-          mat4.scale(modelMatrix, modelMatrix, [0.1, 0.1, 0.4]);
-          ff.setModelMatrix(modelMatrix);
-          ff.setColor(coloresFuerza[i]);
-          gl.bindVertexArray(vaoCaja);
-          ff.drawElements(gl.TRIANGLES, cajaGeom.indices.length, gl.UNSIGNED_SHORT, 0);
         popMatrix();
       }
 
@@ -233,15 +323,15 @@ export function iniciarJuego(canvas: HTMLCanvasElement) {
     if (sePresiono('Digit3')) nivelFuerza = 3;
     if (sePresiono('KeyF')) nivelFuerza = (nivelFuerza % 3) + 1; // 1 → 2 → 3 → 1
 
-    if (sePresiono('Space') && balaDisponible) {
-      console.log('Disparo con fuerza', nivelFuerza); // TEMPORAL: aquí irá la física (fase 4)
-    }
+    if (sePresiono('Space') && balaDisponible) disparar();
 
     if (sePresiono('KeyR')) {
       for (const obj of objetivos) obj.vivo = true;
       balaDisponible = true;
-      console.log('Reinicio'); // TEMPORAL
+      acumulador = 0;
     }
+
+    actualizarBala(dt);
 
     // --- CÁMARA ---
     const aspect = canvas.width / canvas.height;
@@ -260,6 +350,7 @@ export function iniciarJuego(canvas: HTMLCanvasElement) {
     mat4.identity(modelMatrix);
     dibujarSuelo();
     dibujarObjetivos();
+    dibujarBalaEnVuelo();
     dibujarCuerpoTorreta();
 
     finDeCuadro(); // descarta las pulsaciones de este cuadro
