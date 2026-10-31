@@ -4,6 +4,7 @@ export const teclado = {
   Derecha: false,
   Arriba: false,
   Abajo: false,
+  F: false, // también se mira mantenida: un toque cambia la fuerza, mantenerla sobrecarga el cañón
 };
 
 // Teclas PRESIONADAS en este cuadro: acciones de una sola vez (disparar, fuerza, reiniciar)
@@ -23,6 +24,7 @@ export function iniciarControles() {
     if (e.code === 'ArrowRight') teclado.Derecha = true;
     if (e.code === 'ArrowUp') teclado.Arriba = true;
     if (e.code === 'ArrowDown') teclado.Abajo = true;
+    if (e.code === 'KeyF') teclado.F = true;
 
     // e.repeat es true cuando el sistema repite la tecla por mantenerla: eso no cuenta como nueva pulsación
     if (!e.repeat) pulsadas.add(e.code);
@@ -33,11 +35,12 @@ export function iniciarControles() {
     if (e.code === 'ArrowRight') teclado.Derecha = false;
     if (e.code === 'ArrowUp') teclado.Arriba = false;
     if (e.code === 'ArrowDown') teclado.Abajo = false;
+    if (e.code === 'KeyF') teclado.F = false;
   });
 
   // Si la ventana pierde el foco con una flecha abajo, nunca llega el keyup: se sueltan todas
   window.addEventListener('blur', () => {
-    teclado.Izquierda = teclado.Derecha = teclado.Arriba = teclado.Abajo = false;
+    teclado.Izquierda = teclado.Derecha = teclado.Arriba = teclado.Abajo = teclado.F = false;
   });
 }
 

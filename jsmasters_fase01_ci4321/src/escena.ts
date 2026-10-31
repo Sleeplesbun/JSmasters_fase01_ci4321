@@ -61,6 +61,20 @@ export function iniciarJuego(canvas: HTMLCanvasElement) {
   let canonAngle = 30;
   let nivelFuerza = 1;        // 1, 2 o 3
   let balaDisponible = true;  // true = la bala reposa en la punta del cañón
+  let reloj = 0;              // segundos de juego, para animaciones (temblor, parpadeo)
+
+  // SOBRECARGA: un toque corto de F cambia el nivel de fuerza; mantenerla sobrecarga
+  // el cañón, que tiembla cada vez más (efecto visual: no cambia la fuerza del disparo)
+  const UMBRAL_SOBRECARGA = 0.35;  // s: si F se mantiene más que esto, ya no es un toque
+  const SOBRECARGA_MAXIMA = 1.5;   // s: tiempo extra hasta que el temblor llega a su máximo
+  let tiempoF = 0;                 // cuánto lleva F presionada
+  let fPresionadaAntes = false;    // estado de F en el cuadro anterior, para detectar cuándo se suelta
+
+  // 0 = sin sobrecarga, 1 = sobrecarga máxima
+  function intensidadSobrecarga(): number {
+    const s = (tiempoF - UMBRAL_SOBRECARGA) / SOBRECARGA_MAXIMA;
+    return Math.max(0, Math.min(1, s));
+  }
 
   const RADIO_BALA = 0.3;
   const RADIO_OBJETIVO = 1.5;
@@ -68,6 +82,7 @@ export function iniciarJuego(canvas: HTMLCanvasElement) {
   // Colores de las barras de fuerza (los usan los dos indicadores)
   const BARRA_APAGADA: [number, number, number, number] = [0.0, 0.3, 0.0, 1.0];   // verde oscuro
   const BARRA_ENCENDIDA: [number, number, number, number] = [0.4, 1.0, 0.4, 1.0]; // verde claro
+  const BARRA_ALERTA: [number, number, number, number] = [1.0, 0.2, 0.1, 1.0];    // rojo de sobrecarga
 
   // Objetivos: cada uno a una profundidad y altura distintas (la torreta está en z = 8).
   // Ángulos de tiro rasante con los que se acierta cada uno (simulados con la misma física;
@@ -81,6 +96,11 @@ export function iniciarJuego(canvas: HTMLCanvasElement) {
     { pos: [6, 5, -12], vivo: true },  // medio: a 20
     { pos: [0, 7, -24], vivo: true },  // lejano: a 32
   ];
+
+  // Explosiones estilo caricatura: el objetivo desaparece al instante y en su lugar
+  // queda una animación corta (no es un objeto que se pueda golpear)
+  const DURACION_EXPLOSION = 0.45; // segundos: corta y seca
+  const explosiones: { pos: vec3; t: number }[] = [];
 
   // --- FÍSICA DEL PROYECTIL ---
   const GRAVEDAD = 9.8;                 // unidades/s², hacia -Y
@@ -136,6 +156,7 @@ export function iniciarJuego(canvas: HTMLCanvasElement) {
         const sumaRadios = RADIO_BALA + RADIO_OBJETIVO;
         if (distancia2 <= sumaRadios * sumaRadios) {
           obj.vivo = false;      // el objetivo alcanzado desaparece
+          explosiones.push({ pos: vec3.clone(obj.pos), t: 0 }); // y explota donde estaba
           balaDisponible = true; // y la bala vuelve a la punta
           break;
         }
@@ -172,6 +193,74 @@ export function iniciarJuego(canvas: HTMLCanvasElement) {
         gl.bindVertexArray(vaoEsfera);
         ff.drawElements(gl.TRIANGLES, esferaGeom.indices.length, gl.UNSIGNED_SHORT, 0);
       popMatrix();
+    }
+  }
+
+  // EXPLOSIÓN DE CARICATURA: destello que revienta de golpe, rayos en estrella que salen
+  // disparados y humo al final. Todo depende de k = t / duración (0 → 1),
+  // así la animación dura lo mismo a cualquier FPS.
+  function dibujarExplosiones() {
+    const BLANCO: [number, number, number, number] = [1.0, 1.0, 0.9, 1.0];
+    const AMARILLO: [number, number, number, number] = [1.0, 0.85, 0.1, 1.0];
+    const NARANJA: [number, number, number, number] = [1.0, 0.45, 0.0, 1.0];
+    const HUMO: [number, number, number, number] = [0.55, 0.55, 0.55, 1.0];
+
+    for (const e of explosiones) {
+      const k = e.t / DURACION_EXPLOSION;          // va de 0 a 1
+      const salida = 1 - Math.pow(1 - k, 3);       // "ease-out": arranca muy rápido y frena al final
+
+      // 1) Destello: revienta en el primer 12% de la animación y luego se encoge
+      const tamano = k < 0.12 ? k / 0.12 : 1 - (k - 0.12) / 0.88;
+      const radioFuego = RADIO_OBJETIVO * 1.3 * tamano;
+      pushMatrix();
+        mat4.translate(modelMatrix, modelMatrix, e.pos);
+        mat4.scale(modelMatrix, modelMatrix, [radioFuego, radioFuego, radioFuego]);
+        ff.setModelMatrix(modelMatrix);
+        ff.setColor(k < 0.12 ? BLANCO : k < 0.4 ? AMARILLO : NARANJA);
+        gl.bindVertexArray(vaoEsfera);
+        ff.drawElements(gl.TRIANGLES, esferaGeom.indices.length, gl.UNSIGNED_SHORT, 0);
+      popMatrix();
+
+      // 2) Rayos en estrella: 12 picos en el plano XY (de frente a la cámara) que salen
+      //    disparados con "ease-out" y se adelgazan, como el "¡BOOM!" de las caricaturas.
+      //    Se alternan largos y cortos para que la estrella se vea más irregular.
+      for (let j = 0; j < 12; j++) {
+        const esLargo = j % 2 === 0;
+        const distancia = RADIO_OBJETIVO * (0.6 + (esLargo ? 1.8 : 1.2) * salida);
+        const largo = (esLargo ? 1.1 : 0.7) * (1 - k);
+        const grosor = 0.22 * (1 - k);
+        pushMatrix();
+          mat4.translate(modelMatrix, modelMatrix, e.pos);
+          mat4.rotateZ(modelMatrix, modelMatrix, j * (Math.PI / 6));
+          mat4.translate(modelMatrix, modelMatrix, [distancia, 0, 0]);
+          mat4.scale(modelMatrix, modelMatrix, [largo, grosor, grosor]);
+          ff.setModelMatrix(modelMatrix);
+          ff.setColor(esLargo ? AMARILLO : NARANJA);
+          gl.bindVertexArray(vaoCaja);
+          ff.drawElements(gl.TRIANGLES, cajaGeom.indices.length, gl.UNSIGNED_SHORT, 0);
+        popMatrix();
+      }
+
+      // 3) Humo: en la segunda mitad, 5 nubes grises pequeñas que se inflan, suben y se desinflan
+      if (k > 0.45) {
+        const kh = (k - 0.45) / 0.55;                   // 0 → 1 dentro de la fase de humo
+        const radioHumo = 0.45 * Math.sin(kh * Math.PI); // 0 → máximo → 0
+        for (let j = 0; j < 5; j++) {
+          const ang = j * (2 * Math.PI / 5);
+          pushMatrix();
+            mat4.translate(modelMatrix, modelMatrix, [
+              e.pos[0] + Math.cos(ang) * RADIO_OBJETIVO,
+              e.pos[1] + Math.sin(ang) * RADIO_OBJETIVO + kh * 0.6, // el humo sube
+              e.pos[2],
+            ]);
+            mat4.scale(modelMatrix, modelMatrix, [radioHumo, radioHumo, radioHumo]);
+            ff.setModelMatrix(modelMatrix);
+            ff.setColor(HUMO);
+            gl.bindVertexArray(vaoEsfera);
+            ff.drawElements(gl.TRIANGLES, esferaGeom.indices.length, gl.UNSIGNED_SHORT, 0);
+          popMatrix();
+        }
+      }
     }
   }
 
@@ -242,6 +331,18 @@ export function iniciarJuego(canvas: HTMLCanvasElement) {
   function dibujarCabezaTorreta() {
     pushMatrix();
       mat4.translate(modelMatrix, modelMatrix, [0, 0.9, 0]);                // pivote = centro de la cabeza
+
+      // Temblor por sobrecarga: un desplazamiento pequeño que vibra rápido en los 3 ejes.
+      // Es solo traslación, así que no cambia el ángulo (sigue entre 5° y 90°) ni la dirección del disparo.
+      const sobrecarga = intensidadSobrecarga();
+      if (sobrecarga > 0) {
+        const amplitud = 0.07 * sobrecarga;
+        mat4.translate(modelMatrix, modelMatrix, [
+          Math.sin(reloj * 53) * amplitud,
+          Math.sin(reloj * 61 + 1) * amplitud,
+          Math.sin(reloj * 47 + 2) * amplitud,
+        ]);
+      }
       mat4.rotateX(modelMatrix, modelMatrix, canonAngle * (Math.PI / 180)); // elevación
 
       pushMatrix();
@@ -273,14 +374,17 @@ export function iniciarJuego(canvas: HTMLCanvasElement) {
 
       // Indicador decorativo sobre el tubo: repite el nivel de fuerza y gira con el cañón.
       // El indicador oficial del enunciado es el del cuerpo (dibujarIndicadorFuerza).
+      // Con sobrecarga, las barras encendidas parpadean en rojo (más rápido cuanto mayor es)
+      const parpadeoRojo = intensidadSobrecarga() > 0 && Math.sin(reloj * (15 + 25 * intensidadSobrecarga())) > 0;
       for (let i = 0; i < 3; i++) {
         const encendida = i < nivelFuerza;
+        const colorEncendida = parpadeoRojo ? BARRA_ALERTA : BARRA_ENCENDIDA;
         pushMatrix();
           // i = 0 queda más cerca de la base del tubo; i = 2, más cerca de la punta
           mat4.translate(modelMatrix, modelMatrix, [0, 0.25, 0.6 - i * 0.6]);
           mat4.scale(modelMatrix, modelMatrix, [0.1, 0.1, 0.4]);
           ff.setModelMatrix(modelMatrix);
-          ff.setColor(encendida ? BARRA_ENCENDIDA : BARRA_APAGADA);
+          ff.setColor(encendida ? colorEncendida : BARRA_APAGADA);
           gl.bindVertexArray(vaoCaja);
           ff.drawElements(gl.TRIANGLES, cajaGeom.indices.length, gl.UNSIGNED_SHORT, 0);
         popMatrix();
@@ -309,6 +413,7 @@ export function iniciarJuego(canvas: HTMLCanvasElement) {
     // dt = segundos que pasaron desde el cuadro anterior
     const dt = Math.min((ahora - ultimo) / 1000, 0.1);
     ultimo = ahora;
+    reloj += dt;
 
     // Solo cambia el tamaño del canvas si la ventana cambió
     if (canvas.width !== canvas.clientWidth || canvas.height !== canvas.clientHeight) {
@@ -338,7 +443,16 @@ export function iniciarJuego(canvas: HTMLCanvasElement) {
     if (sePresiono('Digit1')) nivelFuerza = 1;
     if (sePresiono('Digit2')) nivelFuerza = 2;
     if (sePresiono('Digit3')) nivelFuerza = 3;
-    if (sePresiono('KeyF')) nivelFuerza = (nivelFuerza % 3) + 1; // 1 → 2 → 3 → 1
+
+    // Tecla F: se decide al SOLTARLA. Toque corto = siguiente nivel (1 → 2 → 3 → 1);
+    // si se mantuvo más que el umbral, fue una sobrecarga y el nivel no cambia.
+    if (teclado.F) {
+      tiempoF += dt;
+    } else if (fPresionadaAntes) {
+      if (tiempoF < UMBRAL_SOBRECARGA) nivelFuerza = (nivelFuerza % 3) + 1;
+      tiempoF = 0;
+    }
+    fPresionadaAntes = teclado.F;
 
     if (sePresiono('Space') && balaDisponible) disparar();
 
@@ -346,9 +460,17 @@ export function iniciarJuego(canvas: HTMLCanvasElement) {
       for (const obj of objetivos) obj.vivo = true;
       balaDisponible = true;
       acumulador = 0;
+      explosiones.length = 0; // borra las explosiones que estuvieran en curso
     }
 
     actualizarBala(dt);
+
+    // Avanza las explosiones y quita las que ya terminaron
+    // (se recorre de atrás hacia adelante para que splice no se salte ninguna)
+    for (let i = explosiones.length - 1; i >= 0; i--) {
+      explosiones[i].t += dt;
+      if (explosiones[i].t >= DURACION_EXPLOSION) explosiones.splice(i, 1);
+    }
 
     // --- CÁMARA ---
     const aspect = canvas.width / canvas.height;
@@ -367,6 +489,7 @@ export function iniciarJuego(canvas: HTMLCanvasElement) {
     mat4.identity(modelMatrix);
     dibujarSuelo();
     dibujarObjetivos();
+    dibujarExplosiones();
     dibujarBalaEnVuelo();
     dibujarCuerpoTorreta();
 
