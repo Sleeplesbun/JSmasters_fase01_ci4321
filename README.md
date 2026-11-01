@@ -4,8 +4,8 @@ Juego de tiro en 3D hecho con WebGL2 y TypeScript para Computación Gráfica I (
 
 ## Integrantes
 
-- Daniela Villalobos 18-11109
-- Enrique Thiers 18-10387
+- Daniela Villalobos 
+- Enrique Thiers 
 
 ## Cómo correrlo
 
