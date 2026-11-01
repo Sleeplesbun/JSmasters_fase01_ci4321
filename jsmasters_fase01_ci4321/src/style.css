@@ -1,14 +1,23 @@
+/*
+  src/style.css
+  Estilos de la página: hacen que el lienzo del juego ocupe toda la ventana,
+  sin márgenes ni barras de desplazamiento.
+  Se importa desde main.ts.
+*/
+
+/* Página: sin márgenes y ocupando el 100% de la ventana */
 body, html {
   margin: 0;
   padding: 0;
   width: 100%;
   height: 100%;
-  overflow: hidden; /* Evita barras de desplazamiento */
-  background-color: #000;
+  overflow: hidden;        /* evita barras de desplazamiento */
+  background-color: #000;  /* color de fondo mientras el lienzo todavía no se dibuja */
 }
 
+/* Lienzo del juego: pantalla completa */
 #canvas {
-  width: 100vw;
-  height: 100vh;
-  display: block;
+  width: 100vw;   /* 100% del ancho de la ventana */
+  height: 100vh;  /* 100% del alto de la ventana */
+  display: block; /* quita el pequeño espacio que deja por defecto debajo de los elementos en línea */
 }

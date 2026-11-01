@@ -1,15 +1,25 @@
 <!DOCTYPE html>
+<!--
+  index.html
+  Página de entrada del juego "Fase 01 - Apuntar al objetivo".
+  Solo contiene el lienzo donde se dibuja la escena 3D y carga el código del juego.
+  Los estilos (style.css) se importan desde main.ts.
+-->
 <html lang="es">
   <head>
     <meta charset="UTF-8" />
+    <!-- Ajusta la página al ancho del dispositivo, sin zoom inicial -->
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Fase 01 - Apuntar al objetivo</title>
   </head>
   <body>
-    <!-- Este es el lienzo donde dibujaremos el 3D -->
+    <!-- Lienzo donde WebGL2 dibuja la escena. Ocupa toda la ventana (ver style.css) -->
     <canvas id="canvas"></canvas>
-    
-    <!-- Conectamos nuestro archivo principal -->
+
+    <!--
+      Punto de entrada del código. type="module" permite usar import/export entre archivos;
+      Vite se encarga de convertir el TypeScript a JavaScript para el navegador.
+    -->
     <script type="module" src="/src/main.ts"></script>
   </body>
 </html>

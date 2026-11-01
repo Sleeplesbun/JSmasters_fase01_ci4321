@@ -1,57 +1,39 @@
-# RGB Triangle: FixedFunction vs. vanilla WebGL2
+# Fase 01: Apuntar al objetivo
 
-One RGB triangle, written two ways. Both versions render the same image.
+Juego de tiro en 3D hecho con WebGL2 y TypeScript para Computación Gráfica I (CI4321).
 
-- `src/examples/triangle.ff.ts` uses the FixedFunction (FF) module. The shaders stay hidden.
-- `src/examples/triangle.vanilla.ts` uses raw WebGL2. The shaders are visible.
+## Integrantes
 
-## Requirements
+- Daniela Villalobos 18-11109
+- Enrique Thiers 18-10387
 
-- Node.js 18 or later (tested with Node 24)
-- npm
-- A browser with WebGL2 support
+## Cómo correrlo
 
-## Run
+Necesitas [Node.js](https://nodejs.org) 20.19 o más reciente.
 
-1. Install the dependencies. This is the only step that needs a network connection.
+1. Abre una terminal dentro de la carpeta del proyecto.
+2. Instala las dependencias (solo la primera vez):
 
    ```
    npm install
    ```
 
-2. Start the development server.
+3. Inicia el juego:
 
    ```
    npm run dev
    ```
 
-3. Open `http://localhost:5173` in your browser.
+4. Abre en el navegador la dirección que aparece en la terminal (normalmente `http://localhost:5173`).
 
-## Use
+## Controles
 
-- Click "FF (main)" or "Vanilla WebGL2 (second)" to switch versions.
-- Press `T` to toggle with the keyboard.
-- The right panel shows the source file of the active version.
-- The URL hash (`#ff` or `#vanilla`) stores the selection.
-
-## Other commands
-
-| Command           | Action                                          |
-| ----------------- | ----------------------------------------------- |
-| `npm run build`   | Type-check with `tsc` and build to `dist/`      |
-| `npm run preview` | Serve the built `dist/` folder locally          |
-
-## Project layout
-
-```
-index.html                 page markup
-src/main.ts                toggle, canvas swap, source panel
-src/examples/shared.ts     vertex data and clear color (#1b1e2b)
-src/examples/triangle.*.ts the two implementations
-src/vendor/ff/             FF v1.0 (read only; do not edit)
-```
-
-## Troubleshooting
-
-- **Blank page or "WebGL2 is not available."** Enable hardware acceleration in the browser, or try another browser.
-- **Port 5173 is in use.** Stop the other process, or run `npx vite --port 3000`.
+| Tecla | Qué hace |
+|---|---|
+| ← → | Mueve la torreta a la izquierda o a la derecha |
+| ↑ ↓ | Sube o baja el cañón (entre 5° y 90°) |
+| 1, 2, 3 | Elige el nivel de fuerza |
+| F (toque) | Pasa al siguiente nivel de fuerza (1 → 2 → 3 → 1) |
+| F (mantener) | Sobrecarga el cañón: tiembla y sus luces parpadean en rojo |
+| Espacio | Dispara (solo si la bala está en la punta del cañón) |
+| R | Reinicia: los objetivos vuelven y la bala regresa al cañón |
