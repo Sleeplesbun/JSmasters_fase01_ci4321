@@ -36,4 +36,4 @@ Necesitas [Node.js](https://nodejs.org) 20.19 o más reciente.
 | F (toque) | Pasa al siguiente nivel de fuerza (1 → 2 → 3 → 1) |
 | F (mantener) | Sobrecarga el cañón: tiembla y sus luces parpadean en rojo |
 | Espacio | Dispara (solo si la bala está en la punta del cañón) |
-| R | Reinicia: los objetivos vuelven y la bala regresa al cañón |
+| R | Reinicia: los objetivos vuelven y la bala regresa al cañón y la torreta vuelve al centro|

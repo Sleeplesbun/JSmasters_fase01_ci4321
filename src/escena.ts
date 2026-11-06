@@ -635,12 +635,16 @@ export function iniciarJuego(canvas: HTMLCanvasElement) {
     // Solo se puede disparar si la bala está en el cañón (una bala en el aire a la vez)
     if (sePresiono('Space') && balaDisponible) disparar();
 
-    // Reinicio: los objetivos reaparecen y la bala vuelve a la punta del cañón
+    // Reinicio: los objetivos reaparecen, la bala vuelve a la punta del cañón
+    // y la torreta regresa a su posición, ángulo y nivel de fuerza iniciales
     if (sePresiono('KeyR')) {
       for (const obj of objetivos) obj.vivo = true;
       balaDisponible = true;
       acumulador = 0;
       explosiones.length = 0; // borra las explosiones que estuvieran en curso
+      torretaX = 0;           // torreta al centro
+      canonAngle = 30;        // cañón en su elevación inicial
+      nivelFuerza = 1;        // fuerza mínima
     }
 
     actualizarBala(dt);
